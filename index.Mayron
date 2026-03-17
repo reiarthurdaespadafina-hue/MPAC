@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Pacman Falsificado do Mayron Rech - SUPREMO</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap');
+
+        body { 
+            margin: 0; 
+            background: #000; 
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center; 
+            height: 100vh; color: #fff; 
+            font-family: 'Orbitron', sans-serif; overflow: hidden;
+            background: radial-gradient(circle at center, #1b0033 0%, #05000a 100%);
+        }
+
+        h1#main-title {
+            margin: 10px 0;
+            background: linear-gradient(to right, #00d2ff, #ff00ff, #00d2ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(255, 0, 255, 0.5);
+            font-size: 2.2rem; text-align: center;
+            animation: glow 3s infinite alternate;
+        }
+
+        @keyframes glow {
+            from { filter: drop-shadow(0 0 5px #00d2ff); }
+            to { filter: drop-shadow(0 0 20px #ff00ff); }
+        }
+
+        #game-container { 
+            position: relative; 
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 100px rgba(0, 0, 0, 1);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        canvas { display: block; cursor: none; }
+
+        .hud { 
+            position: absolute; top: 20px; left: 30px; 
+            font-size: 1.5rem; color: #fff; 
+            text-shadow: 0 0 10px #00d2ff;
+            pointer-events: none;
+        }
+
+        #death-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column;
+            justify-content: center; align-items: center; text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-revive {
+            padding: 20px 60px; 
+            background: linear-gradient(45deg, #00d2ff, #ff00ff);
+            border: none; color: white; font-weight: bold; cursor: pointer;
+            border-radius: 15px; font-size: 1.8rem; margin-top: 30px;
+            box-shadow: 0 0 50px rgba(0, 210, 255, 0.6);
+            transition: 0.3s;
+        }
+
+        .btn-revive:hover { transform: scale(1.1); box-shadow: 0 0 80px #ff00ff; }
+    </style>
+</head>
+<body>
+
+    <h1 id="main-title">JOGUINHO PACMAN FALSIFICADO DO MAYRON RECH</h1>
+
+    <div id="game-container">
+        <div class="hud">ALMAS: <span id="score">0</span></div>
+        <canvas id="game-canvas"></canvas>
+        
+        <div id="death-screen">
+            <h1 style="color: #ff0044; font-size: 4rem; text-shadow: 0 0 30px #ff0044;">FATALITY!</h1>
+            <p id="death-msg" style="font-size: 1.5rem; color: #aaa;"></p>
+            <p style="font-size: 2.5rem;">SCORE: <span id="final-score">0</span></p>
+            <button class="btn-revive" onclick="revive()">RENASCER</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const deathScreen = document.getElementById('death-screen');
+        
+        // Tela Maximizada
+        canvas.width = window.innerWidth * 0.96;
+        canvas.height = window.innerHeight * 0.82;
+
+        let score = 0;
+        let isGameOver = false;
+        let frame = 0;
+
+        const ghost = { x: canvas.width/2, y: canvas.height/2, size: 38, speed: 7.5, history: [] };
+        const stalker = { x: 50, y: 50, size: 35, speed: 3.2 };
+
+        let fruits = [];
+        let meteors = [];
+
+        // Obstáculos de Vidro Neon
+        const walls = [
+            {x: canvas.width * 0.15, y: canvas.height * 0.2, w: 20, h: 350, c: "#00d2ff"},
+            {x: canvas.width * 0.82, y: canvas.height * 0.2, w: 20, h: 350, c: "#ff00ff"},
+            {x: canvas.width * 0.4, y: canvas.height * 0.45, w: 250, h: 20, c: "#fff"},
+            {x: canvas.width * 0.3, y: 70, w: 400, h: 15, c: "#00d2ff"},
+            {x: canvas.width * 0.3, y: canvas.height - 70, w: 400, h: 15, c: "#ff00ff"}
+        ];
+
+        function spawnFruit() {
+            fruits.push({ x: 100 + Math.random()*(canvas.width-200), y: 100 + Math.random()*(canvas.height-200), size: 14, h: Math.random()*360 });
+        }
+        for(let i=0; i<8; i++) spawnFruit();
+
+        function spawnMeteor() {
+            if(!isGameOver) {
+                meteors.push({ 
+                    x: Math.random() * (canvas.width + 200), 
+                    y: -100, 
+                    size: 25 + Math.random()*30, 
+                    speedY: 5 + Math.random()*6,
+                    speedX: -2 - Math.random()*3
+                });
+            }
+        }
+        setInterval(spawnMeteor, 500);
+
+        const keys = {};
+        window.addEventListener('keydown', e => {
+            if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault();
+            keys[e.key.toLowerCase()] = true;
+        });
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+        function collide(a, b) {
+            let bW = b.w || b.size; let bH = b.h || b.size;
+            return a.x < b.x + bW && a.x + a.size > b.x && a.y < b.y + bH && a.y + a.size > b.y;
+        }
+
+        function revive() {
+            score = 0; document.getElementById('score').innerText = "0";
+            ghost.x = canvas.width/2; ghost.y = canvas.height/2; ghost.history = [];
+            stalker.x = 50; stalker.y = 50; stalker.speed = 3.2;
+            fruits = []; meteors = []; for(let i=0; i<8; i++) spawnFruit();
+            isGameOver = false; deathScreen.style.display = 'none';
+            gameLoop();
+        }
+
+        function update() {
+            if(isGameOver) return;
+            frame++;
+            let oldX = ghost.x, oldY = ghost.y;
+
+            if (keys['w'] || keys['arrowup']) ghost.y -= ghost.speed;
+            if (keys['s'] || keys['arrowdown']) ghost.y += ghost.speed;
+            if (keys['a'] || keys['arrowleft']) ghost.x -= ghost.speed;
+            if (keys['d'] || keys['arrowright']) ghost.x += ghost.speed;
+
+            walls.forEach(w => { if(collide(ghost, w)) { ghost.x = oldX; ghost.y = oldY; } });
+            ghost.x = Math.max(0, Math.min(canvas.width - ghost.size, ghost.x));
+            ghost.y = Math.max(0, Math.min(canvas.height - ghost.size, ghost.y));
+
+            // Rastro do Fantasma
+            ghost.history.push({x: ghost.x, y: ghost.y});
+            if(ghost.history.length > 10) ghost.history.shift();
+
+            // Inimigo IA
+            let dx = ghost.x - stalker.x, dy = ghost.y - stalker.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            stalker.x += (dx/dist) * stalker.speed;
+            stalker.y += (dy/dist) * stalker.speed;
+            if(collide(ghost, stalker)) { isGameOver = true; document.getElementById('death-msg').innerText = "O PERSEGUIDOR SOMBRIO TE PEGOU!"; }
+
+            // Meteoros em ângulo
+            meteors.forEach((m, i) => {
+                m.y += m.speedY; m.x += m.speedX;
+                if(collide(ghost, m)) { isGameOver = true; document.getElementById('death-msg').innerText = "UM METEORO APAGOU SUA EXISTÊNCIA!"; }
+                if(m.y > canvas.height + 100) meteors.splice(i, 1);
+            });
+
+            // Frutas (Multiplicação x4)
+            fruits.forEach((f, i) => {
+                if(collide(ghost, f)) {
+                    fruits.splice(i, 1);
+                    score++;
+                    document.getElementById('score').innerText = score;
+                    stalker.speed += 0.06;
+                    for(let n=0; n<4; n++) spawnFruit();
+                }
+            });
+
+            if(isGameOver) { document.getElementById('final-score').innerText = score; deathScreen.style.display = 'flex'; }
+        }
+
+        function drawGhost(obj, color, stalker = false) {
+            ctx.save();
+            ctx.shadowBlur = stalker ? 30 : 20; 
+            ctx.shadowColor = color;
+            ctx.fillStyle = color;
+            
+            // Corpo elegante
+            ctx.beginPath();
+            ctx.arc(obj.x + obj.size/2, obj.y + obj.size/2, obj.size/2, Math.PI, 0);
+            ctx.lineTo(obj.x + obj.size, obj.y + obj.size + 5);
+            ctx.quadraticCurveTo(obj.x + obj.size/2, obj.y + obj.size - 5, obj.x, obj.y + obj.size + 5);
+            ctx.fill();
+
+            // Olhos brilhantes
+            ctx.fillStyle = "#000";
+            ctx.beginPath();
+            ctx.ellipse(obj.x + 12, obj.y + 15, 5, 7, 0, 0, Math.PI*2);
+            ctx.ellipse(obj.x + 26, obj.y + 15, 5, 7, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            ctx.fillStyle = stalker ? "#ff0000" : "#00d2ff";
+            ctx.beginPath();
+            ctx.arc(obj.x + 12, obj.y + 14, 2, 0, Math.PI*2);
+            ctx.arc(obj.x + 26, obj.y + 14, 2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function draw() {
+            // Limpeza com rastro cinematográfico
+            ctx.fillStyle = "rgba(5, 0, 15, 0.4)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Rastro do jogador
+            ghost.history.forEach((pos, i) => {
+                ctx.globalAlpha = i / 20;
+                ctx.fillStyle = "#00d2ff";
+                ctx.fillRect(pos.x, pos.y, ghost.size, ghost.size);
+            });
+            ctx.globalAlpha = 1;
+
+            // Paredes Estilosas
+            walls.forEach(w => {
+                let grad = ctx.createLinearGradient(w.x, w.y, w.x+w.w, w.y+w.h);
+                grad.addColorStop(0, w.c); grad.addColorStop(1, "#fff");
+                ctx.shadowBlur = 15; ctx.shadowColor = w.c;
+                ctx.fillStyle = grad;
+                ctx.fillRect(w.x, w.y, w.w, w.h);
+            });
+
+            // Meteoros com Cauda de Fogo
+            meteors.forEach(m => {
+                ctx.shadowBlur = 25; ctx.shadowColor = "#ff3300";
+                let g = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.size);
+                g.addColorStop(0, "#fff"); g.addColorStop(0.4, "#ffcc00"); g.addColorStop(1, "#ff3300");
+                ctx.fillStyle = g;
+                ctx.beginPath(); ctx.arc(m.x, m.y, m.size, 0, Math.PI*2); ctx.fill();
+            });
+
+            // Frutas (Energia Neon)
+            fruits.forEach(f => {
+                ctx.shadowBlur = 20; ctx.shadowColor = `hsl(${f.h}, 100%, 50%)`;
+                ctx.fillStyle = `hsl(${f.h}, 100%, 50%)`;
+                ctx.beginPath(); 
+                ctx.arc(f.x + 7, f.y + 7, f.size/2 + Math.sin(frame/10)*3, 0, Math.PI*2); 
+                ctx.fill();
+            });
+
+            drawGhost(ghost, "#fff");
+            drawGhost(stalker, "#ff00ff", true);
+        }
+
+        function gameLoop() {
+            update(); draw();
+            if(!isGameOver) requestAnimationFrame(gameLoop);
+        }
+        gameLoop();
+    </script>
+</body>
+</html>
